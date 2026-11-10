@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="hy">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f6f4">
+<title>Քվեարկություն</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Armenian:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f6f6f4;--card:#fff;--line:#e6e6e1;--text:#111;--muted:#7a7a75}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{background:var(--bg);color:var(--text);font-family:"Noto Sans Armenian",system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;min-height:100dvh}
+  .app{max-width:480px;margin:0 auto;padding:36px 18px 130px}
+  h1{font-size:1.6rem;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin-top:6px;font-size:.95rem}
+  .list{margin-top:26px;display:flex;flex-direction:column;gap:10px}
+  .item{display:flex;align-items:center;gap:14px;width:100%;padding:14px 16px;background:var(--card);border:1.5px solid var(--line);border-radius:16px;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:border-color .15s,transform .1s}
+  .item:active{transform:scale(.985)}
+  .item.sel{border-color:var(--text)}
+  .logo{flex:none;border-radius:12px;overflow:hidden;background:#fff;display:grid;place-items:center}
+  .logo img{width:100%;height:100%;object-fit:contain}
+  .logo.fallback{color:#fff;font-weight:700;font-size:1.2rem}
+  .name{flex:1;font-weight:600;font-size:1.02rem;line-height:1.3}
+  .radio{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid #cfcfc9;display:grid;place-items:center;transition:all .15s}
+  .item.sel .radio{background:var(--text);border-color:var(--text)}
+  .radio svg{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:3;opacity:0}
+  .item.sel .radio svg{opacity:1}
+  .dock{position:fixed;left:0;right:0;bottom:0;padding:16px 18px calc(16px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,transparent)}
+  .dock-in{max-width:480px;margin:0 auto}
+  .btn{width:100%;padding:17px;border:0;border-radius:16px;background:var(--text);color:#fff;font:inherit;font-weight:600;font-size:1.02rem;cursor:pointer;transition:opacity .2s,transform .1s}
+  .btn:active{transform:scale(.985)}
+  .btn:disabled{opacity:.25;cursor:not-allowed}
+  .err{color:#c0392b;text-align:center;font-size:.9rem;margin-bottom:10px;display:none}
+  .done{min-height:80vh;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px}
+  .done .ring{width:76px;height:76px;border-radius:50%;background:var(--text);display:grid;place-items:center}
+  .done .ring svg{width:34px;height:34px;stroke:#fff;fill:none;stroke-width:3}
+  .done h2{font-size:1.4rem}
+  .done p{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="vote">
+    <h1 id="title"></h1>
+    <p class="sub" id="subtitle"></p>
+    <div class="list" id="list"></div>
+  </div>
+  <div class="done" id="done">
+    <div class="ring"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <h2>Շնորհակալություն</h2>
+    <p>Քո ձայնը հաշվվեց։</p>
+  </div>
+</div>
+
+<div class="dock" id="dock">
+  <div class="dock-in">
+    <div class="err" id="err">Չհաջողվեց ուղարկել, փորձիր նորից</div>
+    <button class="btn" id="btn" disabled>Քվեարկել</button>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+  let selected = null;
+
+  function showDone(){
+    document.querySelector("#vote").style.display = "none";
+    document.querySelector("#dock").style.display = "none";
+    document.querySelector("#done").style.display = "flex";
+  }
+
+  function showVoteForm(){
+    document.querySelector("#vote").style.display = "block";
+    document.querySelector("#dock").style.display = "block";
+    document.querySelector("#done").style.display = "none";
+    selected = null;
+    document.querySelectorAll(".item").forEach(x => x.classList.remove("sel"));
+    document.querySelector("#btn").disabled = true;
+    document.querySelector("#btn").textContent = "Քվեարկել";
+  }
+
+  document.querySelector("#title").textContent = TITLE;
+  document.querySelector("#subtitle").textContent = SUBTITLE;
+
+  const check = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  PARTIES.forEach(p => {
+    const b = document.createElement("button");
+    b.className = "item";
+    b.appendChild(logoEl(p, 48));
+    const n = document.createElement("div"); n.className = "name"; n.textContent = p.name;
+    const r = document.createElement("div"); r.className = "radio"; r.innerHTML = check;
+    b.append(n, r);
+    b.onclick = () => {
+      selected = p.id;
+      document.querySelectorAll(".item").forEach(x => x.classList.remove("sel"));
+      b.classList.add("sel");
+      document.querySelector("#btn").disabled = false;
+    };
+    document.querySelector("#list").appendChild(b);
+  });
+
+  // FIREBASE-ԻՑ ԶՐՈՅԱՑՄԱՆ ՍՏՈՒԳՈՒՄ
+  let isDemo = typeof FIREBASE_URL === 'undefined' || FIREBASE_URL.includes("example");
+
+  function checkVoteStatus(lastResetTime) {
+    let votedTimestamp = localStorage.getItem(LS_VOTED);
+    if (votedTimestamp) {
+      if (lastResetTime && parseInt(votedTimestamp) < lastResetTime) {
+        // Զրոյացում է եղել քվեարկելուց հետո -> մաքրում ենք արգելքը
+        localStorage.removeItem(LS_VOTED);
+        showVoteForm();
+      } else {
+        showDone();
+      }
+    } else {
+      showVoteForm();
+    }
+  }
+
+  if (!isDemo) {
+    const app = initializeApp({ databaseURL: FIREBASE_URL });
+    const db = getDatabase(app);
+    const resetRef = ref(db, 'resetAt');
+    
+    // Ռեալ-թայմ լսում ենք զրոյացման հրամանը
+    onValue(resetRef, (snapshot) => {
+      const resetAt = snapshot.val() || 0;
+      checkVoteStatus(resetAt);
+    });
+  } else {
+    let demoReset = parseInt(localStorage.getItem('demo_resetAt') || '0');
+    checkVoteStatus(demoReset);
+  }
+
+  document.querySelector("#btn").onclick = async () => {
+    if (!selected) return;
+    const btn = document.querySelector("#btn");
+    btn.disabled = true; 
+    btn.textContent = "Ուղարկվում է…"; 
+    document.querySelector("#err").style.display = "none";
+    try {
+      await sendVote(selected);
+      try { localStorage.setItem(LS_VOTED, Date.now().toString()); } catch {}
+      showDone();
+    } catch {
+      document.querySelector("#err").style.display = "block";
+      btn.disabled = false; 
+      btn.textContent = "Քվեարկել";
+    }
+  };
+</script>
+</body>
+</html>
